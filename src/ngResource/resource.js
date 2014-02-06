@@ -141,6 +141,10 @@ function shallowClearAndCopy(src, dst) {
  *   - **`interceptor`** - `{Object=}` - The interceptor object has two optional methods -
  *     `response` and `responseError`. Both `response` and `responseError` interceptors get called
  *     with `http response` object. See {@link ng.$http $http interceptors}.
+ *   - **`resourceData`** - `{string=|function(response)=}` - A string specifying which field in the
+ *      response should be converted to a Resource object or a function which is passed the
+ *      response from the request and should return a string specifying which field should be
+ *      converted to the Resource object.
  *
  * @returns {Object} A resource "class" object with methods for the default set of resource actions
  *   optionally extended with custom `actions`. The default set contains these actions:
@@ -279,7 +283,7 @@ function shallowClearAndCopy(src, dst) {
  *		var app = angular.module('app', ['ngResource', 'ngRoute']);
  *
  *		// Some APIs expect a PUT request in the format URL/object/ID
- *		// Here we are creating an 'update' method 
+ *		// Here we are creating an 'update' method
  *		app.factory('Notes', ['$resource', function($resource) {
  *    return $resource('/notes/:id', null,
  *        {
@@ -510,7 +514,23 @@ angular.module('ngResource', ['ng']).
 
           var promise = $http(httpConfig).then(function(response) {
             var data = response.data,
-                promise = value.$promise;
+                promise = value.$promise,
+                resourceData;
+
+            if (action.resourceData) {
+
+              if (isFunction(action.resourceData)) {
+                resourceData = action.resourceData(response);
+              } else if (angular.isString(action.resourceData)) {
+                resourceData = action.resourceData;
+              } else {
+                throw $resourceMinErr('badresourceloc',
+                  "Error in resource data configuration. " +
+                    "Expected string or function, got {0}", typeof action.resourceData);
+              }
+
+              data = data[resourceData];
+            }
 
             if (data) {
               // Need to convert action.isArray to boolean in case it is undefined
@@ -534,7 +554,14 @@ angular.module('ngResource', ['ng']).
 
             value.$resolved = true;
 
-            response.resource = value;
+
+            if(resourceData) {
+              var rewrapped = angular.copy(response.data);
+              rewrapped[resourceData] = value;
+              response.resource = rewrapped;
+            } else {
+              response.resource = value;
+            }
 
             return response;
           }, function(response) {
